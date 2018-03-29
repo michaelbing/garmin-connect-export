@@ -258,7 +258,7 @@ parser.add_argument('-f', '--format', nargs='?', choices=['gpx', 'tcx', 'origina
 	help="export format; can be 'gpx', 'tcx', or 'original' (default: 'gpx')")
 
 parser.add_argument('-d', '--directory', nargs='?', default='./',
-	help="the directory to export to (default: './YYYY-MM-DD_garmin_connect_export')")
+	help="the directory to export to (default: './')")
 
 parser.add_argument('-u', '--unzip',
 	help="if downloading ZIP files (format: 'original'), unzip the file and removes the ZIP file",
