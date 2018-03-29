@@ -24,6 +24,7 @@ from fileinput import filename
 
 import argparse
 import zipfile
+import traceback
 
 # url is a string, post is a dictionary of POST parameters, headers is a dictionary of headers.
 def _http_request(opener, url, post=None, headers={}):
@@ -266,7 +267,10 @@ print('Welcome to Garmin Connect Exporter!')
 username = args.username if args.username else input('Username: ')
 password = args.password if args.password else getpass()
 
-gc = GarminConnect(username, password)
-gc.download(args.directory, args.format, args.count, args.unzip)
+try:
+	gc = GarminConnect(username, password)
+	gc.download(args.directory, args.format, args.count, args.unzip)
+except Exception:
+	traceback.print_exc()
 
 print('Done!')
