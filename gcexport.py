@@ -51,7 +51,7 @@ class GarminConnect(object):
 		'%2Fcom.garmin.connect%2Fui%2Fcss%2Fgauth-custom-v1.1-min.css&clientId=GarminConnect&rememberMeShown=true&rememberMeChecked=false'
 		'&createAccountShown=true&openCreateAccount=false&usernameShown=false&displayNameShown=false&consumeServiceTicket=false&initialFocus=true&embedWidget=false&generateExtraServiceTicket=false')
 	POST_AUTH_URL 	= 'https://connect.garmin.com/post-auth/login?'
-	SEARCH_URL    	= 'http://connect.garmin.com/proxy/activity-search-service-1.0/json/activities?'
+	SEARCH_URL    	= 'http://connect.garmin.com/proxy/activity-search-service-1.2/json/activities?'
 	GPX_ACTIVITY_URL = 'https://connect.garmin.com/modern/proxy/download-service/export/gpx/activity/'
 	TCX_ACTIVITY_URL = 'https://connect.garmin.com/modern/proxy/download-service/export/tcx/activity/'
 	ORIGINAL_ACTIVITY_URL = 'http://connect.garmin.com/proxy/download-service/files/activity/'
@@ -122,11 +122,9 @@ class GarminConnect(object):
 			result = _http_request(self.opener, self.SEARCH_URL + urlencode(search_params))
 			json_results = json.loads(result.decode('utf-8'))  # TODO: Catch possible exceptions here.
 			
-			search = json_results['results']['search']
-
 			if download_all:
 				# Modify total_to_download based on how many activities the server reports.
-				total_to_download = int(search['totalFound'])
+				total_to_download = int(json_results['results']['totalFound'])
 				# Do it only once.
 				download_all = False
 
@@ -136,28 +134,39 @@ class GarminConnect(object):
 			# Process each activity.
 			for a in activities:
 				# Display which entry we're working on.
-				print('Garmin Connect activity: [' + a['activity']['activityId'] + ']', end=' ')
-				print(a['activity']['activityName']['value'])
-				print('\t' + a['activity']['beginTimestamp']['display'] + ',', end=' ')
-				if 'sumElapsedDuration' in a['activity']:
-					print(a['activity']['sumElapsedDuration']['display'] + ',', end=' ')
+				activity = a['activity']
+				activityId = activity['activityId']
+				print('Garmin Connect activity: [' + str(activityId) + ']', end=' ')
+				print(a['activity']['activityName'])
+
+				print('\t', end='')
+				if 'activitySummary' in a['activity']:
+					activity_summary = activity['activitySummary']
+					if 'BeginTimestamp' in activity_summary:
+						print(activity_summary['BeginTimestamp']['display'] + ',', end=' ')
+					else:
+						print('??:??:??,', end=' ')
+					if 'SumElapsedDuration' in activity_summary:
+						print(activity_summary['SumElapsedDuration']['display'] + ',', end=' ')
+					else:
+						print('??:??:??,', end=' ')
+					if 'SumDistance' in activity_summary:
+						print(a['activity']['SumDistance']['withUnit'])
+					else:
+						print('0.00 Miles')
 				else:
-					print('??:??:??,', end=' ')
-				if 'sumDistance' in a['activity']:
-					print(a['activity']['sumDistance']['withUnit'])
-				else:
-					print('0.00 Miles')
+					print('No summary.')
 
 				if fileFormat == 'gpx':
-					data_filename = directory + '/activity_' + a['activity']['activityId'] + '.gpx'
-					download_url = self.GPX_ACTIVITY_URL + a['activity']['activityId'] + '?full=true'
+					data_filename = directory + '/activity_' + str(activityId) + '.gpx'
+					download_url = self.GPX_ACTIVITY_URL + str(activityId) + '?full=true'
 				elif fileFormat == 'tcx':
-					data_filename = directory + '/activity_' + a['activity']['activityId'] + '.tcx'
-					download_url = self.TCX_ACTIVITY_URL + a['activity']['activityId'] + '?full=true'
+					data_filename = directory + '/activity_' + str(activityId) + '.tcx'
+					download_url = self.TCX_ACTIVITY_URL + str(activityId) + '?full=true'
 				elif fileFormat == 'original':
-					data_filename = directory + '/activity_' + a['activity']['activityId'] + '.zip'
-					fit_filename = directory + '/' + a['activity']['activityId'] + '.fit'
-					download_url = self.ORIGINAL_ACTIVITY_URL + a['activity']['activityId']
+					data_filename = directory + '/activity_' + str(activityId) + '.zip'
+					fit_filename = directory + '/' + str(activityId) + '.fit'
+					download_url = self.ORIGINAL_ACTIVITY_URL + str(activityId)
 				else:
 					raise Exception('Unrecognized file format.')
 
