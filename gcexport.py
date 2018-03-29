@@ -90,9 +90,9 @@ class GarminConnect(object):
 
 	def download(self, directory, fileFormat, count, unzip):		
 		# Create directory for data files.
-		if isdir(args.directory) and count != 'new':
-			print('Warning: Output directory already exists. Will skip already-downloaded files and append to the CSV file.')
-		elif not isdir(args.directory) and count == 'new':
+		if isdir(directory) and count != 'new':
+			print('Warning: Output directory already exists. Will skip already-downloaded files.')
+		elif not isdir(directory) and count == 'new':
 			raise Exception('Error: Directory does not exist.')
 		
 		if not isdir(directory):
@@ -106,7 +106,7 @@ class GarminConnect(object):
 			total_to_download = 1
 			download_all = True
 		else:
-			total_to_download = int(args.count)
+			total_to_download = int(count)
 		total_downloaded = 0
 
 		# This while loop will download data from the server in multiple chunks, if necessary.
