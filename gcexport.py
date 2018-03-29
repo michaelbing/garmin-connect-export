@@ -242,7 +242,6 @@ class GarminConnect(object):
 
 script_version = '1.0.0'
 current_date = datetime.now().strftime('%Y-%m-%d')
-activities_directory = './' + current_date + '_garmin_connect_export'
 
 parser = argparse.ArgumentParser()
 
@@ -258,7 +257,7 @@ parser.add_argument('-c', '--count', nargs='?', default="1",
 parser.add_argument('-f', '--format', nargs='?', choices=['gpx', 'tcx', 'original'], default="gpx",
 	help="export format; can be 'gpx', 'tcx', or 'original' (default: 'gpx')")
 
-parser.add_argument('-d', '--directory', nargs='?', default=activities_directory,
+parser.add_argument('-d', '--directory', nargs='?', default='./',
 	help="the directory to export to (default: './YYYY-MM-DD_garmin_connect_export')")
 
 parser.add_argument('-u', '--unzip',
