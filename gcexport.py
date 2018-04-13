@@ -44,6 +44,7 @@ def _http_request(opener, url, post=None, headers={}):
 class GarminConnect(object):
 	LOGIN_URL		= 'https://sso.garmin.com/sso/login?'
 	POST_AUTH_URL 	= 'https://connect.garmin.com/modern/activities?'
+	SUMMARY_URL   	= 'https://connect.garmin.com/proxy/activity-search-service-1.2/json/activities?start=0&limit=1'
 	SEARCH_URL    	= 'https://connect.garmin.com/modern/proxy/activitylist-service/activities/search/activities?'
 	GPX_ACTIVITY_URL = 'https://connect.garmin.com/modern/proxy/download-service/export/gpx/activity/'
 	TCX_ACTIVITY_URL = 'https://connect.garmin.com/modern/proxy/download-service/export/tcx/activity/'
@@ -112,13 +113,12 @@ class GarminConnect(object):
 		if not isdir(directory):
 			mkdir(directory)
 
-		download_all = False
-		if count == 'all' or count == 'new':
-			# If the user wants to download all activities, first download one,
-			# then the result of that request will tell us how many are available
-			# so we will modify the variables then.
-			total_to_download = 1
-			download_all = True
+		if count == 'all' or count == 'new':			
+			result = _http_request(self.opener, self.SUMMARY_URL)
+
+			# Modify total_to_download based on how many activities the server reports.
+			json_results = json.loads(result)  # TODO: Catch possible exceptions here.
+			total_to_download = int(json_results['results']['totalFound'])
 		else:
 			total_to_download = int(count)
 		total_downloaded = 0
@@ -136,12 +136,6 @@ class GarminConnect(object):
 			result = _http_request(self.opener, self.SEARCH_URL + urllib.parse.urlencode(search_params))
 			json_results = json.loads(result.decode('utf-8'))  # TODO: Catch possible exceptions here.
 			
-			if download_all:
-				# Modify total_to_download based on how many activities the server reports.
-				total_to_download = int(json_results['results']['totalFound'])
-				# Do it only once.
-				download_all = False
-
 			# Pull out just the list of activities.
 			activities = json_results
 
