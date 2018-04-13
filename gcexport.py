@@ -9,8 +9,7 @@ Description:	Use this script to export your fitness data from Garmin Connect.
 				See README.md for more information.
 """
 
-from urllib.parse import urlencode
-from datetime import datetime
+from datetime import datetime, timedelta
 from getpass import getpass
 from sys import argv
 from os.path import isdir
@@ -19,7 +18,7 @@ from os import mkdir
 from os import remove
 from xml.dom.minidom import parseString
 
-import urllib.request, urllib.error, urllib.parse, http.cookiejar, json
+import urllib, http.cookiejar, json, re
 from fileinput import filename
 
 import argparse
@@ -33,7 +32,7 @@ def _http_request(opener, url, post=None, headers={}):
 	for header_key, header_value in headers.items():
 		request.add_header(header_key, header_value)
 	if post:
-		post = urlencode(post).encode('utf-8')  # Convert dictionary to POST parameter string.
+		post = urllib.parse.urlencode(post).encode('utf-8')  # Convert dictionary to POST parameter string.
 	response = opener.open(request, data=post)  # This line may throw a urllib2.HTTPError.
 
 	# N.B. urllib2 will follow any 302 redirects. Also, the "open" call above may throw a urllib2.HTTPError which is checked for below.
@@ -43,46 +42,61 @@ def _http_request(opener, url, post=None, headers={}):
 	return response.read()
 
 class GarminConnect(object):
-	# URLs for various services.
-	LOGIN_URL     	= ('https://sso.garmin.com/sso/login?service=https%3A%2F%2Fconnect.garmin.com'
-		'%2Fpost-auth%2Flogin&webhost=olaxpw-connect04&source=https%3A%2F%2Fconnect.garmin.com%2Fen-US%2Fsignin&redirectAfterAccount'
-		'LoginUrl=https%3A%2F%2Fconnect.garmin.com%2Fpost-auth%2Flogin&redirectAfterAccountCreationUrl=https%3A%2F%2Fconnect.garmin.com'
-		'%2Fpost-auth%2Flogin&gauthHost=https%3A%2F%2Fsso.garmin.com%2Fsso&locale=en_US&id=gauth-widget&cssUrl=https%3A%2F%2Fstatic.garmincdn.com'
-		'%2Fcom.garmin.connect%2Fui%2Fcss%2Fgauth-custom-v1.1-min.css&clientId=GarminConnect&rememberMeShown=true&rememberMeChecked=false'
-		'&createAccountShown=true&openCreateAccount=false&usernameShown=false&displayNameShown=false&consumeServiceTicket=false&initialFocus=true&embedWidget=false&generateExtraServiceTicket=false')
-	POST_AUTH_URL 	= 'https://connect.garmin.com/post-auth/login?'
-	SEARCH_URL    	= 'http://connect.garmin.com/proxy/activity-search-service-1.2/json/activities?'
+	LOGIN_URL		= 'https://sso.garmin.com/sso/login?'
+	POST_AUTH_URL 	= 'https://connect.garmin.com/modern/activities?'
+	SEARCH_URL    	= 'https://connect.garmin.com/modern/proxy/activitylist-service/activities/search/activities?'
 	GPX_ACTIVITY_URL = 'https://connect.garmin.com/modern/proxy/download-service/export/gpx/activity/'
 	TCX_ACTIVITY_URL = 'https://connect.garmin.com/modern/proxy/download-service/export/tcx/activity/'
 	ORIGINAL_ACTIVITY_URL = 'http://connect.garmin.com/proxy/download-service/files/activity/'
 
-	def __init__(self, username, password):
-		cookie_jar = http.cookiejar.CookieJar()
-		self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
+	def __init__(self):
+		self.cookie_jar = http.cookiejar.CookieJar()
+		self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.cookie_jar))
 
-		# Maximum number of activities you can request at once.  Set and enforced by Garmin.
-		limit_maximum = 100
+	def login(self, username, password):
+		WEBHOST = "https://connect.garmin.com"
+		REDIRECT = "https://connect.garmin.com/post-auth/login"
+		BASE_URL = "http://connect.garmin.com/en-US/signin"
+		SSO = "https://sso.garmin.com/sso"
+		CSS = "https://static.garmincdn.com/com.garmin.connect/ui/css/gauth-custom-v1.2-min.css"
+		data = {'service': REDIRECT,
+			'webhost': WEBHOST,
+			'source': BASE_URL,
+			'redirectAfterAccountLoginUrl': REDIRECT,
+			'redirectAfterAccountCreationUrl': REDIRECT,
+			'gauthHost': SSO,
+			'locale': 'en_US',
+			'id': 'gauth-widget',
+			'cssUrl': CSS,
+			'clientId': 'GarminConnect',
+			'rememberMeShown': 'true',
+			'rememberMeChecked': 'false',
+			'createAccountShown': 'true',
+			'openCreateAccount': 'false',
+			'usernameShown': 'false',
+			'displayNameShown': 'false',
+			'consumeServiceTicket': 'false',
+			'initialFocus': 'true',
+			'embedWidget': 'false',
+			'generateExtraServiceTicket': 'false'}
 
 		# Initially, we need to get a valid session cookie, so we pull the login page.
-		_http_request(self.opener, self.LOGIN_URL)
+		_http_request(self.opener, self.LOGIN_URL + urllib.parse.urlencode(data))
 
 		# Now we'll actually login.
-		post_data = {'username': username, 'password': password, 'embed': 'true', 'lt': 'e1s1', '_eventId': 'submit', 'displayNameRequired': 'false'}  # Fields that are passed in a typical Garmin login.
-		_http_request(self.opener, self.LOGIN_URL, post_data)
+		# Fields that are passed in a typical Garmin login.
+		post_data = {'username': username, 'password': password, 'embed': 'true', 'lt': 'e1s1', '_eventId': 'submit', 'displayNameRequired': 'false'}
+		login_response = _http_request(self.opener, self.LOGIN_URL + urllib.parse.urlencode(data), post_data)
 
-		# Get the key.
-		# TODO: Can we do this without iterating?
-		login_ticket = None
-		for cookie in cookie_jar:
-			if cookie.name == 'CASTGC':
-				login_ticket = cookie.value
-				break
+		# extract the ticket from the login response
+		pattern = re.compile(r".*\?ticket=([-\w]+)\";.*", re.MULTILINE|re.DOTALL)
+		match = pattern.match(login_response.decode('utf-8'))
+		if not match:
+			raise Exception('Did not get a ticket in the login response. Cannot log in. Did you enter the correct username and password?')
+		login_ticket = match.group(1)
 
 		if not login_ticket:
 			raise Exception('Did not get a ticket cookie. Cannot log in. Did you enter the correct username and password?')
-
-		# Chop of 'TGT-' off the beginning, prepend 'ST-0'.
-		login_ticket = 'ST-0' + login_ticket[4:]
 
 		_http_request(self.opener, self.POST_AUTH_URL + 'ticket=' + login_ticket)
 
@@ -119,7 +133,7 @@ class GarminConnect(object):
 
 			search_params = {'start': total_downloaded, 'limit': num_to_download}
 			# Query Garmin Connect
-			result = _http_request(self.opener, self.SEARCH_URL + urlencode(search_params))
+			result = _http_request(self.opener, self.SEARCH_URL + urllib.parse.urlencode(search_params))
 			json_results = json.loads(result.decode('utf-8'))  # TODO: Catch possible exceptions here.
 			
 			if download_all:
@@ -129,33 +143,31 @@ class GarminConnect(object):
 				download_all = False
 
 			# Pull out just the list of activities.
-			activities = json_results['results']['activities']
+			activities = json_results
 
 			# Process each activity.
-			for a in activities:
+			for activity in activities:
 				# Display which entry we're working on.
-				activity = a['activity']
 				activityId = activity['activityId']
 				print('Garmin Connect activity: [' + str(activityId) + ']', end=' ')
-				print(a['activity']['activityName'])
+				print(activity['activityName'])
 
 				print('\t', end='')
-				if 'activitySummary' in a['activity']:
-					activity_summary = activity['activitySummary']
-					if 'BeginTimestamp' in activity_summary:
-						print(activity_summary['BeginTimestamp']['display'] + ',', end=' ')
-					else:
-						print('??:??:??,', end=' ')
-					if 'SumElapsedDuration' in activity_summary:
-						print(activity_summary['SumElapsedDuration']['display'] + ',', end=' ')
-					else:
-						print('??:??:??,', end=' ')
-					if 'SumDistance' in activity_summary:
-						print(a['activity']['SumDistance']['withUnit'])
-					else:
-						print('0.00 Miles')
+				print('Start time:', end=' ')
+				if 'startTimeLocal' in activity:
+					print(activity['startTimeLocal'] + ',', end=' ')
 				else:
-					print('No summary.')
+					print('??:??:??,', end=' ')
+				print('Duration:', end=' ')
+				if 'duration' in activity:
+					print(str(timedelta(seconds=activity['duration'])) + ',', end=' ')
+				else:
+					print('??:??:??,', end=' ')
+				print('Distance:', end=' ')
+				if 'distance' in activity:
+					print(str(activity['distance'] / 1000) + ' km')
+				else:
+					print('? km')
 
 				if fileFormat == 'gpx':
 					data_filename = directory + '/activity_' + str(activityId) + '.gpx'
@@ -276,7 +288,8 @@ username = args.username if args.username else input('Username: ')
 password = args.password if args.password else getpass()
 
 try:
-	gc = GarminConnect(username, password)
+	gc = GarminConnect()
+	gc.login(username, password)
 	gc.download(args.directory, args.format, args.count, args.unzip)
 except Exception:
 	traceback.print_exc()
