@@ -12,10 +12,6 @@ Description:	Use this script to export your fitness data from Garmin Connect.
 from datetime import datetime, timedelta
 from getpass import getpass
 from sys import argv
-from os.path import isdir
-from os.path import isfile
-from os import mkdir
-from os import remove
 from xml.dom.minidom import parseString
 
 import urllib, http.cookiejar, json, re
@@ -24,6 +20,8 @@ from fileinput import filename
 import argparse
 import zipfile
 import traceback
+import logging
+import os
 
 # url is a string, post is a dictionary of POST parameters, headers is a dictionary of headers.
 def _http_request(opener, url, post=None, headers={}):
@@ -103,15 +101,10 @@ class GarminConnect(object):
 
 		# We should be logged in now.
 
-	def download(self, directory, fileFormat, count, unzip):		
-		# Create directory for data files.
-		if isdir(directory) and count != 'new':
-			print('Warning: Output directory already exists. Will skip already-downloaded files.')
-		elif not isdir(directory) and count == 'new':
-			raise Exception('Error: Directory does not exist.')
-		
-		if not isdir(directory):
-			mkdir(directory)
+	def download(self, directory, fileFormat, count, unzip):
+		# Create directory for data files.		
+		if not os.path.isdir(directory):
+			os.mkdir(directory)
 
 		if count == 'all' or count == 'new':			
 			result = _http_request(self.opener, self.SUMMARY_URL)
@@ -143,47 +136,34 @@ class GarminConnect(object):
 			for activity in activities:
 				# Display which entry we're working on.
 				activityId = activity['activityId']
-				print('Garmin Connect activity: [' + str(activityId) + ']', end=' ')
-				print(activity['activityName'])
+				logging.info('Garmin Connect activity: [' + str(activityId) + '] ' + activity['activityName'])
 
-				print('\t', end='')
-				print('Start time:', end=' ')
-				if 'startTimeLocal' in activity:
-					print(activity['startTimeLocal'] + ',', end=' ')
-				else:
-					print('??:??:??,', end=' ')
-				print('Duration:', end=' ')
-				if 'duration' in activity:
-					print(str(timedelta(seconds=activity['duration'])) + ',', end=' ')
-				else:
-					print('??:??:??,', end=' ')
-				print('Distance:', end=' ')
-				if 'distance' in activity:
-					print(str(activity['distance'] / 1000) + ' km')
-				else:
-					print('? km')
+				startTimeLocal = activity['startTimeLocal'] if 'startTimeLocal' in activity else '??:??:??'
+				duration = str(timedelta(seconds=activity['duration'])) if 'duration' in activity else '??:??:??'
+				distance = str(activity['distance'] / 1000) if 'distance' in activity else '?'
+				logging.debug('\t' + 'Start time: ' + startTimeLocal + ', Duration: ' + duration + ', Distance: ' + distance + ' km')
 
 				if fileFormat == 'gpx':
-					data_filename = directory + '/activity_' + str(activityId) + '.gpx'
+					data_filename = os.path.join(directory, 'activity_' + str(activityId) + '.gpx')
 					download_url = self.GPX_ACTIVITY_URL + str(activityId) + '?full=true'
 				elif fileFormat == 'tcx':
-					data_filename = directory + '/activity_' + str(activityId) + '.tcx'
+					data_filename = os.path.join(directory, 'activity_' + str(activityId) + '.tcx')
 					download_url = self.TCX_ACTIVITY_URL + str(activityId) + '?full=true'
 				elif fileFormat == 'original':
-					data_filename = directory + '/activity_' + str(activityId) + '.zip'
-					fit_filename = directory + '/' + str(activityId) + '.fit'
+					data_filename = os.path.join(directory, 'activity_' + str(activityId) + '.zip')
+					fit_filename = os.path.join(directory, str(activityId) + '.fit')
 					download_url = self.ORIGINAL_ACTIVITY_URL + str(activityId)
 				else:
 					raise Exception('Unrecognized file format.')
 
-				if isfile(data_filename):
-					print('\tData file already exists; skipping...')
+				if os.path.isfile(data_filename):
+					logging.info('\tData file already exists; skipping...')
 					if count == 'new':
 						return
 					else:
 						continue
-				if fileFormat == 'original' and isfile(fit_filename):  # Regardless of unzip setting, don't redownload if the ZIP or FIT file exists.
-					print('\tFIT data file already exists; skipping...')
+				if fileFormat == 'original' and os.path.isfile(fit_filename):  # Regardless of unzip setting, don't redownload if the ZIP or FIT file exists.
+					logging.info('\tFIT data file already exists; skipping...')
 					if count == 'new':
 						return
 					else:
@@ -193,7 +173,7 @@ class GarminConnect(object):
 				# If the download fails (e.g., due to timeout), this script will die, but nothing
 				# will have been written to disk about this activity, so just running it again
 				# should pick up where it left off.
-				print('\tDownloading file...', end=' ')
+				logging.debug('\tDownloading file...')
 
 				try:
 					data = _http_request(self.opener, download_url)
@@ -204,12 +184,12 @@ class GarminConnect(object):
 						# Writing an empty file prevents this file from being redownloaded, similar to the way GPX files are saved even when there are no tracks.
 						# One could be generated here, but that's a bit much. Use the GPX format if you want actual data in every file,
 						# as I believe Garmin provides a GPX file for every activity.
-						print('Writing empty file since Garmin did not generate a TCX file for this activity...', end=' ')
+						logging.warning('\tWriting empty file since Garmin did not generate a TCX file for this activity...')
 						data = b''
 					elif e.code == 404 and fileFormat == 'original':
 						# For manual activities (i.e., entered in online without a file upload), there is no original file.
 						# Write an empty file to prevent redownloading it.
-						print('Writing empty file since there was no original activity data...', end=' ')
+						logging.warning('\tWriting empty file since there was no original activity data...')
 						data = b''
 					else:
 						raise Exception('Failed. Got an unexpected HTTP error (' + str(e.code) + ').')
@@ -226,23 +206,23 @@ class GarminConnect(object):
 					gpx_data_exists = len(gpx.getElementsByTagName('trkpt')) > 0
 
 					if gpx_data_exists:
-						print('Done. GPX data saved.')
+						logging.info('\tDone. GPX data saved.')
 					else:
-						print('Done. No track points found.')
+						logging.info('\tDone. No track points found.')
 				elif fileFormat == 'original':
 					if len(data) > 0:
 						if unzip and data_filename[-3:].lower() == 'zip':  # Even manual upload of a GPX file is zipped, but we'll validate the extension.
-							print("Unzipping and removing original files...", end=' ')
+							logging.debug("\tUnzipping and removing original files...")
 							zip_file = open(data_filename, 'rb')
 							z = zipfile.ZipFile(zip_file)
 							for name in z.namelist():
 								z.extract(name, directory)
 							zip_file.close()
-							remove(data_filename)
-					print('Done.')
+							os.remove(data_filename)
+					logging.info('\tDone.')
 				else:
 					# TODO: Consider validating other formats.
-					print('Done.')
+					logging.info('\tDone.')
 			total_downloaded += num_to_download
 		# End while loop for multiple chunks.
 
@@ -269,6 +249,10 @@ parser.add_argument('-d', '--directory', nargs='?', default='./',
 parser.add_argument('-u', '--unzip',
 	help="if downloading ZIP files (format: 'original'), unzip the file and removes the ZIP file",
 	action="store_true")
+	
+parser.add_argument('-l', '--log',
+	help="enable logging",
+	action="store_true")
 
 args = parser.parse_args()
 
@@ -278,6 +262,29 @@ if args.version:
 
 print('Welcome to Garmin Connect Exporter!')
 
+logger = logging.getLogger()
+
+# Console logging
+logger.setLevel(logging.DEBUG)
+handler = logging.StreamHandler()
+handler.setLevel(logging.DEBUG)
+logger.addHandler(handler)
+
+if (args.log):
+	# Error logging to error.log
+	handler = logging.FileHandler(os.path.join(args.directory, "error.log"))
+	handler.setLevel(logging.ERROR)
+	formatter = logging.Formatter("[%(asctime)s] %(message)s")
+	handler.setFormatter(formatter)
+	logger.addHandler(handler)
+
+	# Debug logging to debug.log
+	handler = logging.FileHandler(os.path.join(args.directory, "debug.log"))
+	handler.setLevel(logging.DEBUG)
+	formatter = logging.Formatter("[%(asctime)s] %(message)s")
+	handler.setFormatter(formatter)
+	logger.addHandler(handler)
+
 username = args.username if args.username else input('Username: ')
 password = args.password if args.password else getpass()
 
@@ -285,7 +292,8 @@ try:
 	gc = GarminConnect()
 	gc.login(username, password)
 	gc.download(args.directory, args.format, args.count, args.unzip)
-except Exception:
+except Exception as exception:
+	logging.error(exception)
 	traceback.print_exc()
 
 print('Done!')
