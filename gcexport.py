@@ -42,7 +42,8 @@ def _http_request(opener, url, post=None, headers={}):
 class GarminConnect(object):
 	LOGIN_URL		= 'https://sso.garmin.com/sso/login?'
 	POST_AUTH_URL 	= 'https://connect.garmin.com/modern/activities?'
-	SUMMARY_URL   	= 'https://connect.garmin.com/proxy/activity-search-service-1.2/json/activities?start=0&limit=1'
+	PROFILE_URL 	= "https://connect.garmin.com/modern/profile"
+	USERSTATS_URL 	= "https://connect.garmin.com/modern/proxy/userstats-service/statistics/"
 	SEARCH_URL    	= 'https://connect.garmin.com/modern/proxy/activitylist-service/activities/search/activities?'
 	GPX_ACTIVITY_URL = 'https://connect.garmin.com/modern/proxy/download-service/export/gpx/activity/'
 	TCX_ACTIVITY_URL = 'https://connect.garmin.com/modern/proxy/download-service/export/tcx/activity/'
@@ -106,12 +107,28 @@ class GarminConnect(object):
 		if not os.path.isdir(directory):
 			os.mkdir(directory)
 
-		if count == 'all' or count == 'new':			
-			result = _http_request(self.opener, self.SUMMARY_URL)
+		if count == 'all' or count == 'new':
+			# If the user wants to download all activities, query the userstats
+			# on the profile page to know how many are available
+			logging.info("Getting display name and user stats via: " + self.PROFILE_URL)
+			profile_page = _http_request(self.opener, self.PROFILE_URL).decode('utf-8')
+			# write_to_file(args.directory + '/profile.html', profile_page, 'a')
+
+			# extract the display name from the profile page, it should be in there as
+			# \"displayName\":\"eschep\"
+			pattern = re.compile(r".*\\\"displayName\\\":\\\"([-.\w]+)\\\".*", re.MULTILINE | re.DOTALL)
+			match = pattern.match(profile_page)
+			if not match:
+				raise Exception("Did not find the display name in the profile page.")
+			display_name = match.group(1)
+			logging.info("Found the display name: " + display_name)
 
 			# Modify total_to_download based on how many activities the server reports.
-			json_results = json.loads(result)  # TODO: Catch possible exceptions here.
-			total_to_download = int(json_results['results']['totalFound'])
+			user_stats = _http_request(self.opener, self.USERSTATS_URL + display_name)
+			json_user = json.loads(user_stats)
+			total_to_download = int(json_user["userMetrics"][0]["totalActivities"])
+
+			logging.info("Found the activity count: " + str(total_to_download))
 		else:
 			total_to_download = int(count)
 		total_downloaded = 0
