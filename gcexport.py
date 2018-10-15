@@ -26,7 +26,8 @@ import os
 # url is a string, post is a dictionary of POST parameters, headers is a dictionary of headers.
 def _http_request(opener, url, post=None, headers={}):
 	request = urllib.request.Request(url)
-	request.add_header('User-Agent', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/1337 Safari/537.36')  # Tell Garmin we're some supported browser.
+	# Tell Garmin we're some supported browser. 
+	request.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 6.1; Win64; x64)')
 	for header_key, header_value in headers.items():
 		request.add_header(header_key, header_value)
 	if post:
@@ -54,43 +55,54 @@ class GarminConnect(object):
 		self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.cookie_jar))
 
 	def login(self, username, password):
-		WEBHOST = "https://connect.garmin.com"
-		REDIRECT = "https://connect.garmin.com/post-auth/login"
-		BASE_URL = "http://connect.garmin.com/en-US/signin"
-		SSO = "https://sso.garmin.com/sso"
-		CSS = "https://static.garmincdn.com/com.garmin.connect/ui/css/gauth-custom-v1.2-min.css"
-		data = {'service': REDIRECT,
-			'webhost': WEBHOST,
-			'source': BASE_URL,
-			'redirectAfterAccountLoginUrl': REDIRECT,
-			'redirectAfterAccountCreationUrl': REDIRECT,
-			'gauthHost': SSO,
+		data = {
+			'service': 'https://connect.garmin.com/modern',
+			'webhost': 'https://connect.garmin.com',
+			'source': 'https://connect.garmin.com/en-US/signin',
+			'redirectAfterAccountLoginUrl': 'https://connect.garmin.com/modern',
+			'redirectAfterAccountCreationUrl': 'https://connect.garmin.com/modern',
+			'gauthHost': 'https://sso.garmin.com/sso',
 			'locale': 'en_US',
 			'id': 'gauth-widget',
-			'cssUrl': CSS,
+			'cssUrl': 'https://static.garmincdn.com/com.garmin.connect/ui/css/gauth-custom-v1.2-min.css',
 			'clientId': 'GarminConnect',
 			'rememberMeShown': 'true',
 			'rememberMeChecked': 'false',
 			'createAccountShown': 'true',
 			'openCreateAccount': 'false',
-			'usernameShown': 'false',
 			'displayNameShown': 'false',
 			'consumeServiceTicket': 'false',
 			'initialFocus': 'true',
 			'embedWidget': 'false',
-			'generateExtraServiceTicket': 'false'}
+			'generateExtraServiceTicket': 'false',
+			'generateNoServiceTicket': 'false',
+			'globalOptInShown': 'true',
+			'globalOptInChecked': 'false',
+			'mobile': 'false',
+			'connectLegalTerms': 'true',
+			'locationPromptShown': 'true'
+			}
 
 		# Initially, we need to get a valid session cookie, so we pull the login page.
 		_http_request(self.opener, self.LOGIN_URL + urllib.parse.urlencode(data))
 
 		# Now we'll actually login.
 		# Fields that are passed in a typical Garmin login.
-		post_data = {'username': username, 'password': password, 'embed': 'true', 'lt': 'e1s1', '_eventId': 'submit', 'displayNameRequired': 'false'}
-		login_response = _http_request(self.opener, self.LOGIN_URL + urllib.parse.urlencode(data), post_data)
+		post_data = {
+			'username': username,
+			'password': password,
+			'embed': 'true',
+			'lt': 'e1s1',
+			'_eventId': 'submit',
+			'displayNameRequired': 'false',
+			'queryString': urllib.parse.urlencode(data),
+			'contextPath': '/sso'
+			}
+		login_response = _http_request(self.opener, self.LOGIN_URL + urllib.parse.urlencode(data), post_data).decode()
 
 		# extract the ticket from the login response
-		pattern = re.compile(r".*\?ticket=([-\w]+)\";.*", re.MULTILINE|re.DOTALL)
-		match = pattern.match(login_response.decode('utf-8'))
+		pattern = re.compile(r".*\?ticket=([-\w]+)\";.*", re.MULTILINE | re.DOTALL)
+		match = pattern.match(login_response)
 		if not match:
 			raise Exception('Did not get a ticket in the login response. Cannot log in. Did you enter the correct username and password?')
 		login_ticket = match.group(1)
