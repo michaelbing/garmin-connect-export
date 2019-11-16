@@ -11,7 +11,6 @@ Description:	Use this script to export your fitness data from Garmin Connect.
 
 from datetime import datetime, timedelta
 from getpass import getpass
-from sys import argv
 from xml.dom.minidom import parseString
 
 import urllib, http.cookiejar, json, re
@@ -21,7 +20,7 @@ import argparse
 import zipfile
 import traceback
 import logging
-import os
+import sys, os
 
 # url is a string, post is a dictionary of POST parameters, headers is a dictionary of headers.
 def _http_request(opener, url, post=None, headers={}):
@@ -136,7 +135,7 @@ class GarminConnect(object):
 			logging.info("Found the display name: " + display_name)
 
 			# Modify total_to_download based on how many activities the server reports.
-			user_stats = _http_request(self.opener, self.USERSTATS_URL + display_name)
+			user_stats = _http_request(self.opener, self.USERSTATS_URL + display_name).decode('utf-8')
 			json_user = json.loads(user_stats)
 			total_to_download = int(json_user["userMetrics"][0]["totalActivities"])
 
@@ -155,8 +154,8 @@ class GarminConnect(object):
 
 			search_params = {'start': total_downloaded, 'limit': num_to_download}
 			# Query Garmin Connect
-			result = _http_request(self.opener, self.SEARCH_URL + urllib.parse.urlencode(search_params))
-			json_results = json.loads(result.decode('utf-8'))  # TODO: Catch possible exceptions here.
+			result = _http_request(self.opener, self.SEARCH_URL + urllib.parse.urlencode(search_params)).decode('utf-8')
+			json_results = json.loads(result)  # TODO: Catch possible exceptions here.
 			
 			# Pull out just the list of activities.
 			activities = json_results
@@ -324,5 +323,6 @@ try:
 except Exception as exception:
 	logging.error(exception)
 	traceback.print_exc()
+	sys.exit(-1)
 
 print('Done!')
