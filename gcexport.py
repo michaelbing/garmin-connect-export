@@ -25,8 +25,9 @@ import sys, os
 # url is a string, post is a dictionary of POST parameters, headers is a dictionary of headers.
 def _http_request(opener, url, post=None, headers={}):
 	request = urllib.request.Request(url)
-	# Tell Garmin we're some supported browser. 
-	request.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 6.1; Win64; x64)')
+	# Tell Garmin we're some supported browser.
+	request.add_header('User-Agent', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, \
+        like Gecko) Chrome/54.0.2816.0 Safari/537.36')
 	for header_key, header_value in headers.items():
 		request.add_header(header_key, header_value)
 	if post:
@@ -40,26 +41,12 @@ def _http_request(opener, url, post=None, headers={}):
 	return response.read()
 
 class GarminConnect(object):
-	LOGIN_URL		= 'https://sso.garmin.com/sso/login?'
-	POST_AUTH_URL 	= 'https://connect.garmin.com/modern/activities?'
-	PROFILE_URL 	= "https://connect.garmin.com/modern/profile"
-	USERSTATS_URL 	= "https://connect.garmin.com/modern/proxy/userstats-service/statistics/"
-	SEARCH_URL    	= 'https://connect.garmin.com/modern/proxy/activitylist-service/activities/search/activities?'
-	GPX_ACTIVITY_URL = 'https://connect.garmin.com/modern/proxy/download-service/export/gpx/activity/'
-	TCX_ACTIVITY_URL = 'https://connect.garmin.com/modern/proxy/download-service/export/tcx/activity/'
-	ORIGINAL_ACTIVITY_URL = 'http://connect.garmin.com/proxy/download-service/files/activity/'
-
-	def __init__(self):
-		self.cookie_jar = http.cookiejar.CookieJar()
-		self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.cookie_jar))
-
-	def login(self, username, password):
-		data = {
-			'service': 'https://connect.garmin.com/modern',
+	DATA = {
+			'service': 'https://connect.garmin.com/modern/',
 			'webhost': 'https://connect.garmin.com',
 			'source': 'https://connect.garmin.com/en-US/signin',
-			'redirectAfterAccountLoginUrl': 'https://connect.garmin.com/modern',
-			'redirectAfterAccountCreationUrl': 'https://connect.garmin.com/modern',
+			'redirectAfterAccountLoginUrl': 'https://connect.garmin.com/modern/',
+			'redirectAfterAccountCreationUrl': 'https://connect.garmin.com/modern/',
 			'gauthHost': 'https://sso.garmin.com/sso',
 			'locale': 'en_US',
 			'id': 'gauth-widget',
@@ -73,31 +60,46 @@ class GarminConnect(object):
 			'consumeServiceTicket': 'false',
 			'initialFocus': 'true',
 			'embedWidget': 'false',
-			'generateExtraServiceTicket': 'false',
+			'generateExtraServiceTicket': 'true',
+			'generateTwoExtraServiceTickets': 'false',
 			'generateNoServiceTicket': 'false',
 			'globalOptInShown': 'true',
 			'globalOptInChecked': 'false',
 			'mobile': 'false',
 			'connectLegalTerms': 'true',
-			'locationPromptShown': 'true'
+			'locationPromptShown': 'true',
+			'showPassword': 'true'
 			}
+	LOGIN_URL		= 'https://sso.garmin.com/sso/signin?' + urllib.parse.urlencode(DATA)
+	POST_AUTH_URL 	= 'https://connect.garmin.com/modern/activities?'
+	PROFILE_URL 	= "https://connect.garmin.com/modern/profile"
+	USERSTATS_URL 	= "https://connect.garmin.com/modern/proxy/userstats-service/statistics/"
+	SEARCH_URL    	= 'https://connect.garmin.com/modern/proxy/activitylist-service/activities/search/activities?'
+	GPX_ACTIVITY_URL = 'https://connect.garmin.com/modern/proxy/download-service/export/gpx/activity/'
+	TCX_ACTIVITY_URL = 'https://connect.garmin.com/modern/proxy/download-service/export/tcx/activity/'
+	ORIGINAL_ACTIVITY_URL = 'http://connect.garmin.com/proxy/download-service/files/activity/'
 
-		# Initially, we need to get a valid session cookie, so we pull the login page.
-		_http_request(self.opener, self.LOGIN_URL + urllib.parse.urlencode(data))
+	def __init__(self):
+		self.cookie_jar = http.cookiejar.CookieJar()
+		self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.cookie_jar))
+
+	def login(self, username, password):
+		# Initially, we need to get a valid session cookie, so we pull the login page.		
+		logging.info("Connecting..")
+		_http_request(self.opener, self.LOGIN_URL)
 
 		# Now we'll actually login.
 		# Fields that are passed in a typical Garmin login.
 		post_data = {
 			'username': username,
 			'password': password,
-			'embed': 'true',
-			'lt': 'e1s1',
-			'_eventId': 'submit',
-			'displayNameRequired': 'false',
-			'queryString': urllib.parse.urlencode(data),
-			'contextPath': '/sso'
-			}
-		login_response = _http_request(self.opener, self.LOGIN_URL + urllib.parse.urlencode(data), post_data).decode()
+			'embed': 'false',
+			'rememberme': 'on'
+			}			
+		login_headers = {'origin': 'https://sso.garmin.com'}
+
+		logging.info("Requesting login ticket..")		
+		login_response = _http_request(self.opener, self.LOGIN_URL + '#', post=post_data, headers=login_headers).decode()
 
 		# extract the ticket from the login response
 		pattern = re.compile(r".*\?ticket=([-\w]+)\";.*", re.MULTILINE | re.DOTALL)
@@ -121,7 +123,7 @@ class GarminConnect(object):
 		if count == 'all' or count == 'new':
 			# If the user wants to download all activities, query the userstats
 			# on the profile page to know how many are available
-			logging.info("Getting display name and user stats via: " + self.PROFILE_URL)
+			logging.info("Getting display name and user stats..")
 			profile_page = _http_request(self.opener, self.PROFILE_URL).decode('utf-8')
 			# write_to_file(args.directory + '/profile.html', profile_page, 'a')
 
